@@ -6,6 +6,8 @@
 <title>IT Ticket - Admin Dashboard</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
 body{
@@ -14,7 +16,6 @@ body{
     background:#f1f5f9;
     color:#0f172a;
 }
-
 header{
     background:#0f172a;
     color:white;
@@ -22,8 +23,8 @@ header{
     text-align:center;
     font-weight:600;
     font-size:18px;
+    transition:0.4s ease;
 }
-
 .container{ padding:20px; }
 
 .kpi-grid{
@@ -32,76 +33,58 @@ header{
     gap:16px;
     margin-bottom:20px;
 }
-
 .kpi{
     background:white;
-    border-radius:16px;
-    padding:18px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.08);
+    border-radius:20px;
+    padding:20px;
+    box-shadow:0 12px 28px rgba(0,0,0,0.08);
 }
-
 .kpi h4{
     margin:0;
     font-size:12px;
     text-transform:uppercase;
     color:#64748b;
 }
-
 .kpi .value{
     margin-top:8px;
     font-size:24px;
     font-weight:700;
 }
-
 .card{
     background:white;
-    border-radius:16px;
-    padding:20px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.08);
+    border-radius:20px;
+    padding:24px;
+    box-shadow:0 12px 28px rgba(0,0,0,0.08);
+    margin-bottom:20px;
 }
-
 table{
     width:100%;
     border-collapse:collapse;
     font-size:14px;
 }
-
 th,td{
     padding:12px;
     border-bottom:1px solid #e2e8f0;
 }
-
 th{
     background:#f8fafc;
     font-size:12px;
     text-transform:uppercase;
 }
-
 tr:hover{ background:#f8fafc; }
-
-.badge{
-    padding:6px 10px;
-    border-radius:20px;
-    font-size:12px;
-    font-weight:600;
+select,input{
+    padding:8px;
+    border-radius:8px;
+    border:1px solid #e2e8f0;
+}
+button{
+    padding:8px 14px;
+    border:none;
+    border-radius:8px;
+    background:#0ea5e9;
+    color:white;
     cursor:pointer;
 }
-
-.badge.aperto{
-    background:#fee2e2;
-    color:#991b1b;
-}
-
-.badge.in_lavorazione{
-    background:#fef9c3;
-    color:#92400e;
-}
-
-.badge.chiuso{
-    background:#dcfce7;
-    color:#166534;
-}
-
 .status{
     margin-bottom:15px;
     font-size:14px;
@@ -114,25 +97,30 @@ tr:hover{ background:#f8fafc; }
 
 <header>IT Ticket - Admin Dashboard</header>
 
+<audio id="newTicketSound" preload="auto">
+<source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
+</audio>
+
 <div class="container">
 
 <div class="kpi-grid">
-    <div class="kpi">
-        <h4>Totale</h4>
-        <div class="value" id="kpiTotal">0</div>
-    </div>
-    <div class="kpi">
-        <h4>Aperti</h4>
-        <div class="value" id="kpiOpen">0</div>
-    </div>
-    <div class="kpi">
-        <h4>In Lavorazione</h4>
-        <div class="value" id="kpiWorking">0</div>
-    </div>
-    <div class="kpi">
-        <h4>Chiusi</h4>
-        <div class="value" id="kpiClosed">0</div>
-    </div>
+<div class="kpi"><h4>Totale</h4><div class="value" id="kpiTotal">0</div></div>
+<div class="kpi"><h4>Aperti</h4><div class="value" id="kpiOpen">0</div></div>
+<div class="kpi"><h4>In Lavorazione</h4><div class="value" id="kpiWorking">0</div></div>
+<div class="kpi"><h4>Chiusi</h4><div class="value" id="kpiClosed">0</div></div>
+</div>
+
+<div class="card">
+<div style="display:flex;gap:10px;flex-wrap:wrap;">
+<input id="searchInput" placeholder="🔎 Ricerca globale..." style="flex:1;">
+<select id="statusFilter">
+<option value="">Tutti</option>
+<option value="aperto">Aperti</option>
+<option value="in_lavorazione">In Lavorazione</option>
+<option value="chiuso">Chiusi</option>
+</select>
+<button onclick="exportPDF()">📄 Export PDF</button>
+</div>
 </div>
 
 <div class="card">
@@ -150,281 +138,237 @@ tr:hover{ background:#f8fafc; }
 <tbody id="tableBody"></tbody>
 </table>
 </div>
+
+<div class="card">
+<h3>Analytics</h3>
+<canvas id="statusChart"></canvas>
+</div>
+
 </div>
 
 <script>
 
 /* CONFIG */
-const DROPBOX_APP_KEY = "djxi8x2gj3ss38l";
-const DROPBOX_FOLDER = "/tickets";
-const REDIRECT_URI = "https://evotechlab.github.io/ticketmanager/";
+const DROPBOX_APP_KEY="djxi8x2gj3ss38l";
+const DROPBOX_FOLDER="/tickets";
+const REDIRECT_URI="https://evotechlab.github.io/ticketmanager/";
 
-let accessToken = localStorage.getItem("db_access");
-let refreshToken = localStorage.getItem("db_refresh");
+let accessToken=localStorage.getItem("db_access");
+let refreshToken=localStorage.getItem("db_refresh");
 
-let tickets = [];
+let tickets=[];
+let previousTicketIds=new Set();
+let firstLoad=true;
+let chart;
 
-/* ================= AUTH (IDENTICO) ================= */
-
-function generateRandomString(length){
-    const chars="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let result="";
-    for(let i=0;i<length;i++) result+=chars.charAt(Math.floor(Math.random()*chars.length));
-    return result;
-}
-
-async function sha256base64url(str){
-    const encoder=new TextEncoder();
-    const data=encoder.encode(str);
-    const hash=await crypto.subtle.digest("SHA-256",data);
-    return btoa(String.fromCharCode(...new Uint8Array(hash)))
-        .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
-}
-
-async function initDropboxAuth(){
-
-    const params=new URLSearchParams(window.location.search);
-    const code=params.get("code");
-
-    if(code && !accessToken){
-
-        const codeVerifier=sessionStorage.getItem("pkce_code_verifier");
-
-        const response=await fetch("https://api.dropboxapi.com/oauth2/token",{
-            method:"POST",
-            headers:{"Content-Type":"application/x-www-form-urlencoded"},
-            body:new URLSearchParams({
-                code,
-                grant_type:"authorization_code",
-                client_id:DROPBOX_APP_KEY,
-                redirect_uri:REDIRECT_URI,
-                code_verifier:codeVerifier
-            })
-        });
-
-        const data=await response.json();
-
-        accessToken=data.access_token;
-        refreshToken=data.refresh_token;
-
-        localStorage.setItem("db_access",accessToken);
-        localStorage.setItem("db_refresh",refreshToken);
-
-        window.history.replaceState({},document.title,REDIRECT_URI);
-    }
-
-    if(!accessToken && !refreshToken){
-
-        const codeVerifier=generateRandomString(64);
-        const codeChallenge=await sha256base64url(codeVerifier);
-        sessionStorage.setItem("pkce_code_verifier",codeVerifier);
-
-        const authUrl=
-            `https://www.dropbox.com/oauth2/authorize?client_id=${DROPBOX_APP_KEY}&response_type=code&token_access_type=offline&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code_challenge=${codeChallenge}&code_challenge_method=S256`;
-
-        window.location.href=authUrl;
-    }
-}
+/* ================= AUTH ================= */
 
 async function refreshAccessToken(){
-    const response=await fetch("https://api.dropboxapi.com/oauth2/token",{
-        method:"POST",
-        headers:{"Content-Type":"application/x-www-form-urlencoded"},
-        body:new URLSearchParams({
-            grant_type:"refresh_token",
-            refresh_token:refreshToken,
-            client_id:DROPBOX_APP_KEY
-        })
-    });
-    const data=await response.json();
-    accessToken=data.access_token;
-    localStorage.setItem("db_access",accessToken);
+const response=await fetch("https://api.dropboxapi.com/oauth2/token",{
+method:"POST",
+headers:{"Content-Type":"application/x-www-form-urlencoded"},
+body:new URLSearchParams({
+grant_type:"refresh_token",
+refresh_token:refreshToken,
+client_id:DROPBOX_APP_KEY
+})
+});
+const data=await response.json();
+accessToken=data.access_token;
+localStorage.setItem("db_access",accessToken);
 }
 
 async function dropboxFetch(url,options={}){
-    options.headers=options.headers||{};
-    options.headers["Authorization"]="Bearer "+accessToken;
-
-    let response=await fetch(url,options);
-
-    if(response.status===401 && refreshToken){
-        await refreshAccessToken();
-        options.headers["Authorization"]="Bearer "+accessToken;
-        response=await fetch(url,options);
-    }
-
-    return response;
+options.headers=options.headers||{};
+options.headers["Authorization"]="Bearer "+accessToken;
+let response=await fetch(url,options);
+if(response.status===401 && refreshToken){
+await refreshAccessToken();
+options.headers["Authorization"]="Bearer "+accessToken;
+response=await fetch(url,options);
+}
+return response;
 }
 
-/* ================= DATA LOAD ================= */
+/* ================= LOAD ================= */
 
 async function updateData(){
 
-    document.getElementById("status").innerText="Aggiornamento...";
+document.getElementById("status").innerText="Aggiornamento...";
 
-    const response=await dropboxFetch(
-        "https://api.dropboxapi.com/2/files/list_folder",
-        {
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({path:DROPBOX_FOLDER})
-        }
-    );
+const response=await dropboxFetch(
+"https://api.dropboxapi.com/2/files/list_folder",
+{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({path:DROPBOX_FOLDER})
+}
+);
 
-    const data=await response.json();
+const data=await response.json();
 
-    const ticketFiles=data.entries
-        .filter(f => f[".tag"]==="file" && f.name.startsWith("ticket_"));
+const ticketFiles=data.entries.filter(f=>f[".tag"]==="file" && f.name.startsWith("ticket_"));
 
-    tickets = await Promise.all(
-        ticketFiles.map(async file=>{
-            const res=await dropboxFetch(
-                "https://content.dropboxapi.com/2/files/download",
-                {
-                    method:"POST",
-                    headers:{
-                        "Dropbox-API-Arg":JSON.stringify({path:file.path_lower})
-                    }
-                }
-            );
-            return await res.json();
-        })
-    );
+tickets=await Promise.all(ticketFiles.map(async file=>{
+const res=await dropboxFetch(
+"https://content.dropboxapi.com/2/files/download",
+{
+method:"POST",
+headers:{"Dropbox-API-Arg":JSON.stringify({path:file.path_lower})}
+}
+);
+return await res.json();
+}));
 
-    renderDashboard();
+const currentIds=new Set(tickets.map(t=>t.id));
+
+if(!firstLoad){
+currentIds.forEach(id=>{
+if(!previousTicketIds.has(id)){
+playNewTicketSound();
+}
+});
+}
+
+previousTicketIds=currentIds;
+firstLoad=false;
+
+renderDashboard();
 }
 
 /* ================= RENDER ================= */
 
 function renderDashboard(){
 
-    tickets.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+const search=document.getElementById("searchInput").value.toLowerCase();
+const filter=document.getElementById("statusFilter").value;
 
-    let open=0,work=0,closed=0;
+let filtered=tickets.filter(t=>{
+const matchSearch=t.user.toLowerCase().includes(search)||
+t.problema.toLowerCase().includes(search)||
+t.id.includes(search);
+const matchStatus=filter? t.stato===filter:true;
+return matchSearch && matchStatus;
+});
 
-    tickets.forEach(t=>{
-        if(t.stato==="aperto") open++;
-        else if(t.stato==="in_lavorazione") work++;
-        else if(t.stato==="chiuso") closed++;
-    });
+filtered.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
 
-    document.getElementById("kpiTotal").innerText=tickets.length;
-    document.getElementById("kpiOpen").innerText=open;
-    document.getElementById("kpiWorking").innerText=work;
-    document.getElementById("kpiClosed").innerText=closed;
+let open=0,work=0,closed=0;
+filtered.forEach(t=>{
+if(t.stato==="aperto") open++;
+else if(t.stato==="in_lavorazione") work++;
+else if(t.stato==="chiuso") closed++;
+});
 
-    const tbody=document.getElementById("tableBody");
-    tbody.innerHTML="";
+document.getElementById("kpiTotal").innerText=tickets.length;
+document.getElementById("kpiOpen").innerText=open;
+document.getElementById("kpiWorking").innerText=work;
+document.getElementById("kpiClosed").innerText=closed;
 
-    tickets.forEach(t=>{
+const tbody=document.getElementById("tableBody");
+tbody.innerHTML="";
 
-        const row=document.createElement("tr");
+filtered.forEach(t=>{
+tbody.innerHTML+=`
+<tr>
+<td>${t.id}</td>
+<td>${new Date(t.timestamp).toLocaleDateString()}</td>
+<td>${t.user}</td>
+<td>${t.problema}</td>
+<td>
+<select onchange="changeStatus('${t.id}',this.value)">
+<option value="aperto" ${t.stato==="aperto"?"selected":""}>APERTO</option>
+<option value="in_lavorazione" ${t.stato==="in_lavorazione"?"selected":""}>IN LAVORAZIONE</option>
+<option value="chiuso" ${t.stato==="chiuso"?"selected":""}>CHIUSO</option>
+</select>
+</td>
+</tr>`;
+});
 
-        row.innerHTML=`
-            <td>${t.id}</td>
-            <td>${new Date(t.timestamp).toLocaleDateString()}</td>
-            <td>${t.user}</td>
-            <td>${t.problema}</td>
-            <td>
-                <select onchange="changeStatus('${t.id}', this.value)">
-                    <option value="aperto" ${t.stato==="aperto"?"selected":""}>APERTO</option>
-                    <option value="in_lavorazione" ${t.stato==="in_lavorazione"?"selected":""}>IN LAVORAZIONE</option>
-                    <option value="chiuso" ${t.stato==="chiuso"?"selected":""}>CHIUSO</option>
-                </select>
-            </td>
-        `;
+updateChart(open,work,closed);
 
-        tbody.appendChild(row);
-    });
-
-    document.getElementById("status").innerText=
-        "Ultimo aggiornamento: "+new Date().toLocaleTimeString();
+document.getElementById("status").innerText="Ultimo aggiornamento: "+new Date().toLocaleTimeString();
 }
 
-/* ================= UPDATE STATUS ================= */
+/* ================= STATUS ================= */
 
 async function changeStatus(id,newStatus){
 
-    const ticket=tickets.find(t=>t.id===id);
-    if(!ticket) return;
+const ticket=tickets.find(t=>t.id===id);
+ticket.stato=newStatus;
 
-    ticket.stato=newStatus;
+await dropboxFetch(
+"https://content.dropboxapi.com/2/files/upload",
+{
+method:"POST",
+headers:{
+"Content-Type":"application/octet-stream",
+"Dropbox-API-Arg":JSON.stringify({
+path:`${DROPBOX_FOLDER}/ticket_${id}.json`,
+mode:"overwrite"
+})
+},
+body:JSON.stringify(ticket)
+}
+);
 
-    // aggiorna file ticket singolo
-    await dropboxFetch(
-        "https://content.dropboxapi.com/2/files/upload",
-        {
-            method:"POST",
-            headers:{
-                "Content-Type":"application/octet-stream",
-                "Dropbox-API-Arg":JSON.stringify({
-                    path:`${DROPBOX_FOLDER}/ticket_${id}.json`,
-                    mode:"overwrite"
-                })
-            },
-            body:JSON.stringify(ticket)
-        }
-    );
-
-    // aggiorna storico utente
-    await updateUserHistory(ticket);
-
-    renderDashboard();
+renderDashboard();
 }
 
-/* ================= UPDATE USER FILE ================= */
+/* ================= CHART ================= */
 
-async function updateUserHistory(ticket){
+function updateChart(open,work,closed){
+const ctx=document.getElementById("statusChart");
+if(chart) chart.destroy();
+chart=new Chart(ctx,{
+type:'doughnut',
+data:{
+labels:['Aperti','In Lavorazione','Chiusi'],
+datasets:[{
+data:[open,work,closed],
+backgroundColor:['#ef4444','#facc15','#22c55e']
+}]
+},
+options:{plugins:{legend:{position:'bottom'}}}
+});
+}
 
-    const userFile=`${DROPBOX_FOLDER}/user_${ticket.user.toLowerCase().replace(/\s+/g,"_")}.json`;
+/* ================= PDF ================= */
 
-    const res=await dropboxFetch(
-        "https://content.dropboxapi.com/2/files/download",
-        {
-            method:"POST",
-            headers:{
-                "Dropbox-API-Arg":JSON.stringify({path:userFile})
-            }
-        }
-    );
+async function exportPDF(){
+const { jsPDF }=window.jspdf;
+const doc=new jsPDF();
+doc.text("IT Ticket Audit Report",14,15);
+let y=25;
+tickets.forEach(t=>{
+doc.text(`${t.id} | ${t.user} | ${t.stato} | ${t.problema}`,14,y);
+y+=6;
+if(y>280){doc.addPage();y=20;}
+});
+doc.save("ticket_audit_report.pdf");
+}
 
-    if(res.status!==200) return;
+/* ================= ALERT ================= */
 
-    const history=await res.json();
-
-    const index=history.tickets.findIndex(t=>t.id===ticket.id);
-    if(index!==-1){
-        history.tickets[index]=ticket;
-
-        await dropboxFetch(
-            "https://content.dropboxapi.com/2/files/upload",
-            {
-                method:"POST",
-                headers:{
-                    "Content-Type":"application/octet-stream",
-                    "Dropbox-API-Arg":JSON.stringify({
-                        path:userFile,
-                        mode:"overwrite"
-                    })
-                },
-                body:JSON.stringify(history)
-            }
-        );
-    }
+function playNewTicketSound(){
+const audio=document.getElementById("newTicketSound");
+audio.currentTime=0;
+audio.play().catch(()=>{});
+const header=document.querySelector("header");
+header.style.background="#16a34a";
+setTimeout(()=>{header.style.background="#0f172a";},1500);
 }
 
 /* ================= INIT ================= */
 
-async function init(){
-    await initDropboxAuth();
-    await updateData();
-    setInterval(updateData,8000);
-}
+document.getElementById("searchInput").addEventListener("input",renderDashboard);
+document.getElementById("statusFilter").addEventListener("change",renderDashboard);
 
-init();
+setInterval(updateData,8000);
+updateData();
 
 </script>
 
-
 </body>
 </html>
+
