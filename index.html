@@ -397,29 +397,26 @@ plugins:{legend:{position:'bottom'}}
 
 /* ================= AUDIO ================= */
 
-let audioContext;
+let audioContext = null;
 
-// crea contesto subito
-function initAudio() {
+// crea contesto SOLO su interazione reale
+function enableAudio() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
 }
 
-// sblocca al primo click
-document.addEventListener("click", async () => {
-    initAudio();
-    if (audioContext.state === "suspended") {
-        await audioContext.resume();
-    }
+// sblocca al primo click reale
+window.addEventListener("pointerdown", () => {
+    enableAudio();
 }, { once: true });
 
-async function playNewTicketSound() {
+function playNewTicketSound() {
 
-    initAudio();
+    if (!audioContext) return; // se non ancora attivato
 
     if (audioContext.state === "suspended") {
-        await audioContext.resume();
+        audioContext.resume();
     }
 
     const oscillator = audioContext.createOscillator();
@@ -427,22 +424,22 @@ async function playNewTicketSound() {
 
     oscillator.type = "sine";
     oscillator.frequency.value = 880;
-
-    gainNode.gain.value = 0.25;
+    gainNode.gain.value = 0.3;
 
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
     oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.3);
+    oscillator.stop(audioContext.currentTime + 0.25);
 
-    // effetto visivo
+    // Effetto visivo
     const header = document.querySelector("header");
     header.style.background = "#16a34a";
     setTimeout(() => {
         header.style.background = "#0f172a";
     }, 1200);
 }
+
 
 
 /* ================= PDF ================= */
