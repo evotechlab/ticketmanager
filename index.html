@@ -11,85 +11,103 @@
 
 <style>
 body{
-    margin:0;
-    font-family:Inter,sans-serif;
-    background:#f1f5f9;
-    color:#0f172a;
+margin:0;
+font-family:Inter,sans-serif;
+background:#f1f5f9;
+color:#0f172a;
 }
+
 header{
-    background:#0f172a;
-    color:white;
-    padding:18px;
-    text-align:center;
-    font-weight:600;
-    font-size:18px;
-    transition:0.4s ease;
+background:#0f172a;
+color:white;
+padding:18px;
+text-align:center;
+font-weight:600;
+font-size:18px;
+transition:0.4s ease;
 }
+
 .container{ padding:20px; }
 
 .kpi-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
-    gap:16px;
-    margin-bottom:20px;
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+gap:16px;
+margin-bottom:20px;
 }
+
 .kpi{
-    background:white;
-    border-radius:20px;
-    padding:20px;
-    box-shadow:0 12px 28px rgba(0,0,0,0.08);
+background:white;
+border-radius:20px;
+padding:20px;
+box-shadow:0 12px 28px rgba(0,0,0,0.08);
 }
+
 .kpi h4{
-    margin:0;
-    font-size:12px;
-    text-transform:uppercase;
-    color:#64748b;
+margin:0;
+font-size:12px;
+text-transform:uppercase;
+color:#64748b;
 }
+
 .kpi .value{
-    margin-top:8px;
-    font-size:24px;
-    font-weight:700;
+margin-top:8px;
+font-size:24px;
+font-weight:700;
 }
+
 .card{
-    background:white;
-    border-radius:20px;
-    padding:24px;
-    box-shadow:0 12px 28px rgba(0,0,0,0.08);
-    margin-bottom:20px;
+background:white;
+border-radius:20px;
+padding:24px;
+box-shadow:0 12px 28px rgba(0,0,0,0.08);
+margin-bottom:20px;
 }
+
 table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:14px;
+width:100%;
+border-collapse:collapse;
+font-size:14px;
 }
+
 th,td{
-    padding:12px;
-    border-bottom:1px solid #e2e8f0;
+padding:12px;
+border-bottom:1px solid #e2e8f0;
 }
+
 th{
-    background:#f8fafc;
-    font-size:12px;
-    text-transform:uppercase;
+background:#f8fafc;
+font-size:12px;
+text-transform:uppercase;
 }
+
 tr:hover{ background:#f8fafc; }
+
 select,input{
-    padding:8px;
-    border-radius:8px;
-    border:1px solid #e2e8f0;
+padding:8px;
+border-radius:8px;
+border:1px solid #e2e8f0;
 }
+
 button{
-    padding:8px 14px;
-    border:none;
-    border-radius:8px;
-    background:#0ea5e9;
-    color:white;
-    cursor:pointer;
+padding:8px 14px;
+border:none;
+border-radius:8px;
+background:#0ea5e9;
+color:white;
+cursor:pointer;
 }
+
 .status{
-    margin-bottom:15px;
-    font-size:14px;
-    color:#475569;
+margin-bottom:15px;
+font-size:14px;
+color:#475569;
 }
+
+canvas{
+max-height:220px !important;
+}
+
 </style>
 </head>
 
@@ -148,7 +166,8 @@ button{
 
 <script>
 
-/* CONFIG */
+/* ================= CONFIG ================= */
+
 const DROPBOX_APP_KEY="djxi8x2gj3ss38l";
 const DROPBOX_FOLDER="/tickets";
 const REDIRECT_URI="https://evotechlab.github.io/ticketmanager/";
@@ -189,6 +208,13 @@ response=await fetch(url,options);
 }
 return response;
 }
+
+/* ================= AUDIO UNLOCK ================= */
+
+document.addEventListener("click",()=>{
+const audio=document.getElementById("newTicketSound");
+audio.play().then(()=>audio.pause()).catch(()=>{});
+},{once:true});
 
 /* ================= LOAD ================= */
 
@@ -254,6 +280,7 @@ return matchSearch && matchStatus;
 filtered.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
 
 let open=0,work=0,closed=0;
+
 filtered.forEach(t=>{
 if(t.stato==="aperto") open++;
 else if(t.stato==="in_lavorazione") work++;
@@ -290,13 +317,16 @@ updateChart(open,work,closed);
 document.getElementById("status").innerText="Ultimo aggiornamento: "+new Date().toLocaleTimeString();
 }
 
-/* ================= STATUS ================= */
+/* ================= STATUS SYNC FIX ================= */
 
 async function changeStatus(id,newStatus){
 
 const ticket=tickets.find(t=>t.id===id);
+if(!ticket) return;
+
 ticket.stato=newStatus;
 
+/* update ticket file */
 await dropboxFetch(
 "https://content.dropboxapi.com/2/files/upload",
 {
@@ -312,14 +342,51 @@ body:JSON.stringify(ticket)
 }
 );
 
+/* update user history file */
+const userFile=`${DROPBOX_FOLDER}/user_${ticket.user.toLowerCase().replace(/\s+/g,"_")}.json`;
+
+const res=await dropboxFetch(
+"https://content.dropboxapi.com/2/files/download",
+{
+method:"POST",
+headers:{"Dropbox-API-Arg":JSON.stringify({path:userFile})}
+}
+);
+
+if(res.status===200){
+const history=await res.json();
+const index=history.tickets.findIndex(t=>t.id===id);
+if(index!==-1){
+history.tickets[index].stato=newStatus;
+
+await dropboxFetch(
+"https://content.dropboxapi.com/2/files/upload",
+{
+method:"POST",
+headers:{
+"Content-Type":"application/octet-stream",
+"Dropbox-API-Arg":JSON.stringify({
+path:userFile,
+mode:"overwrite"
+})
+},
+body:JSON.stringify(history)
+}
+);
+}
+}
+
 renderDashboard();
 }
 
 /* ================= CHART ================= */
 
 function updateChart(open,work,closed){
+
 const ctx=document.getElementById("statusChart");
+
 if(chart) chart.destroy();
+
 chart=new Chart(ctx,{
 type:'doughnut',
 data:{
@@ -329,8 +396,23 @@ data:[open,work,closed],
 backgroundColor:['#ef4444','#facc15','#22c55e']
 }]
 },
-options:{plugins:{legend:{position:'bottom'}}}
+options:{
+responsive:true,
+maintainAspectRatio:false,
+plugins:{legend:{position:'bottom'}}
+}
 });
+}
+
+/* ================= AUDIO ================= */
+
+function playNewTicketSound(){
+const audio=document.getElementById("newTicketSound");
+audio.currentTime=0;
+audio.play().catch(()=>{});
+const header=document.querySelector("header");
+header.style.background="#16a34a";
+setTimeout(()=>{header.style.background="#0f172a";},1500);
 }
 
 /* ================= PDF ================= */
@@ -348,17 +430,6 @@ if(y>280){doc.addPage();y=20;}
 doc.save("ticket_audit_report.pdf");
 }
 
-/* ================= ALERT ================= */
-
-function playNewTicketSound(){
-const audio=document.getElementById("newTicketSound");
-audio.currentTime=0;
-audio.play().catch(()=>{});
-const header=document.querySelector("header");
-header.style.background="#16a34a";
-setTimeout(()=>{header.style.background="#0f172a";},1500);
-}
-
 /* ================= INIT ================= */
 
 document.getElementById("searchInput").addEventListener("input",renderDashboard);
@@ -371,4 +442,5 @@ updateData();
 
 </body>
 </html>
+
 
