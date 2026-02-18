@@ -159,9 +159,12 @@ const DROPBOX_APP_KEY = "djxi8x2gj3ss38l";
 const DROPBOX_FOLDER = "/tickets";
 const REDIRECT_URI = "https://evotechlab.github.io/ticketmanager/";
 
-/* TOKEN */
 let accessToken = localStorage.getItem("db_access");
 let refreshToken = localStorage.getItem("db_refresh");
+
+let tickets = [];
+
+/* ================= AUTH (IDENTICO) ================= */
 
 function generateRandomString(length){
     const chars="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -253,7 +256,7 @@ async function dropboxFetch(url,options={}){
     return response;
 }
 
-let tickets=[];
+/* ================= DATA LOAD ================= */
 
 async function updateData(){
 
@@ -269,27 +272,29 @@ async function updateData(){
     );
 
     const data=await response.json();
-    tickets=[];
 
-    for(const file of data.entries){
-        if(file[".tag"]!=="file") continue;
+    const ticketFiles=data.entries
+        .filter(f => f[".tag"]==="file" && f.name.startsWith("ticket_"));
 
-        const res=await dropboxFetch(
-            "https://content.dropboxapi.com/2/files/download",
-            {
-                method:"POST",
-                headers:{
-                    "Dropbox-API-Arg":JSON.stringify({path:file.path_lower})
+    tickets = await Promise.all(
+        ticketFiles.map(async file=>{
+            const res=await dropboxFetch(
+                "https://content.dropboxapi.com/2/files/download",
+                {
+                    method:"POST",
+                    headers:{
+                        "Dropbox-API-Arg":JSON.stringify({path:file.path_lower})
+                    }
                 }
-            }
-        );
-
-        const ticket=await res.json();
-        tickets.push(ticket);
-    }
+            );
+            return await res.json();
+        })
+    );
 
     renderDashboard();
 }
+
+/* ================= RENDER ================= */
 
 function renderDashboard(){
 
@@ -312,32 +317,40 @@ function renderDashboard(){
     tbody.innerHTML="";
 
     tickets.forEach(t=>{
-        tbody.innerHTML+=`
-        <tr>
+
+        const row=document.createElement("tr");
+
+        row.innerHTML=`
             <td>${t.id}</td>
             <td>${new Date(t.timestamp).toLocaleDateString()}</td>
             <td>${t.user}</td>
             <td>${t.problema}</td>
             <td>
-                <span class="badge ${t.stato}" onclick="cycleStatus('${t.id}')">
-                    ${t.stato.replace("_"," ").toUpperCase()}
-                </span>
+                <select onchange="changeStatus('${t.id}', this.value)">
+                    <option value="aperto" ${t.stato==="aperto"?"selected":""}>APERTO</option>
+                    <option value="in_lavorazione" ${t.stato==="in_lavorazione"?"selected":""}>IN LAVORAZIONE</option>
+                    <option value="chiuso" ${t.stato==="chiuso"?"selected":""}>CHIUSO</option>
+                </select>
             </td>
-        </tr>`;
+        `;
+
+        tbody.appendChild(row);
     });
 
     document.getElementById("status").innerText=
         "Ultimo aggiornamento: "+new Date().toLocaleTimeString();
 }
 
-async function cycleStatus(id){
+/* ================= UPDATE STATUS ================= */
+
+async function changeStatus(id,newStatus){
 
     const ticket=tickets.find(t=>t.id===id);
+    if(!ticket) return;
 
-    if(ticket.stato==="aperto") ticket.stato="in_lavorazione";
-    else if(ticket.stato==="in_lavorazione") ticket.stato="chiuso";
-    else ticket.stato="aperto";
+    ticket.stato=newStatus;
 
+    // aggiorna file ticket singolo
     await dropboxFetch(
         "https://content.dropboxapi.com/2/files/upload",
         {
@@ -353,18 +366,65 @@ async function cycleStatus(id){
         }
     );
 
-    updateData();
+    // aggiorna storico utente
+    await updateUserHistory(ticket);
+
+    renderDashboard();
 }
+
+/* ================= UPDATE USER FILE ================= */
+
+async function updateUserHistory(ticket){
+
+    const userFile=`${DROPBOX_FOLDER}/user_${ticket.user.toLowerCase().replace(/\s+/g,"_")}.json`;
+
+    const res=await dropboxFetch(
+        "https://content.dropboxapi.com/2/files/download",
+        {
+            method:"POST",
+            headers:{
+                "Dropbox-API-Arg":JSON.stringify({path:userFile})
+            }
+        }
+    );
+
+    if(res.status!==200) return;
+
+    const history=await res.json();
+
+    const index=history.tickets.findIndex(t=>t.id===ticket.id);
+    if(index!==-1){
+        history.tickets[index]=ticket;
+
+        await dropboxFetch(
+            "https://content.dropboxapi.com/2/files/upload",
+            {
+                method:"POST",
+                headers:{
+                    "Content-Type":"application/octet-stream",
+                    "Dropbox-API-Arg":JSON.stringify({
+                        path:userFile,
+                        mode:"overwrite"
+                    })
+                },
+                body:JSON.stringify(history)
+            }
+        );
+    }
+}
+
+/* ================= INIT ================= */
 
 async function init(){
     await initDropboxAuth();
     await updateData();
-    setInterval(updateData,5000);
+    setInterval(updateData,8000);
 }
 
 init();
 
 </script>
+
 
 </body>
 </html>
