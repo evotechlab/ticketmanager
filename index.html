@@ -207,13 +207,6 @@ response=await fetch(url,options);
 return response;
 }
 
-/* ================= AUDIO UNLOCK ================= */
-
-document.addEventListener("click",()=>{
-const audio=document.getElementById("newTicketSound");
-audio.play().then(()=>audio.pause()).catch(()=>{});
-},{once:true});
-
 /* ================= LOAD ================= */
 
 async function updateData(){
