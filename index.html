@@ -125,6 +125,11 @@ max-height:220px !important;
 </div>
 
 <div class="card">
+<h3>Analytics</h3>
+<canvas id="statusChart"></canvas>
+</div>
+
+<div class="card">
 <div style="display:flex;gap:10px;flex-wrap:wrap;">
 <input id="searchInput" placeholder="🔎 Ricerca globale..." style="flex:1;">
 <select id="statusFilter">
@@ -153,10 +158,7 @@ max-height:220px !important;
 </table>
 </div>
 
-<div class="card">
-<h3>Analytics</h3>
-<canvas id="statusChart"></canvas>
-</div>
+
 
 </div>
 
@@ -403,40 +405,50 @@ plugins:{legend:{position:'bottom'}}
 /* ================= AUDIO ================= */
 
 let audioContext;
-let audioEnabled = false;
 
-// Sblocca audio al primo click utente
-document.addEventListener("click", () => {
+// crea contesto subito
+function initAudio() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        audioEnabled = true;
+    }
+}
+
+// sblocca al primo click
+document.addEventListener("click", async () => {
+    initAudio();
+    if (audioContext.state === "suspended") {
+        await audioContext.resume();
     }
 }, { once: true });
 
-function playNewTicketSound() {
+async function playNewTicketSound() {
 
-    if (!audioEnabled || !audioContext) return;
+    initAudio();
+
+    if (audioContext.state === "suspended") {
+        await audioContext.resume();
+    }
 
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
 
     oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+    oscillator.frequency.value = 880;
 
-    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode.gain.value = 0.25;
 
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
     oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.25);
+    oscillator.stop(audioContext.currentTime + 0.3);
 
-    // ALERT VISIVO HEADER
+    // effetto visivo
     const header = document.querySelector("header");
     header.style.background = "#16a34a";
     setTimeout(() => {
         header.style.background = "#0f172a";
-    }, 1500);
+    }, 1200);
 }
 
 
