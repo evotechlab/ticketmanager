@@ -115,10 +115,6 @@ max-height:220px !important;
 
 <header>IT Ticket - Admin Dashboard</header>
 
-<audio id="newTicketSound" preload="auto">
-<source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
-</audio>
-
 <div class="container">
 
 <div class="kpi-grid">
@@ -406,14 +402,43 @@ plugins:{legend:{position:'bottom'}}
 
 /* ================= AUDIO ================= */
 
-function playNewTicketSound(){
-const audio=document.getElementById("newTicketSound");
-audio.currentTime=0;
-audio.play().catch(()=>{});
-const header=document.querySelector("header");
-header.style.background="#16a34a";
-setTimeout(()=>{header.style.background="#0f172a";},1500);
+let audioContext;
+let audioEnabled = false;
+
+// Sblocca audio al primo click utente
+document.addEventListener("click", () => {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioEnabled = true;
+    }
+}, { once: true });
+
+function playNewTicketSound() {
+
+    if (!audioEnabled || !audioContext) return;
+
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+
+    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.25);
+
+    // ALERT VISIVO HEADER
+    const header = document.querySelector("header");
+    header.style.background = "#16a34a";
+    setTimeout(() => {
+        header.style.background = "#0f172a";
+    }, 1500);
 }
+
 
 /* ================= PDF ================= */
 
